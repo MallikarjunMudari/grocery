@@ -136,7 +136,10 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function normQty(q){
   if (q===undefined || q===null || String(q).trim()==="") return DEFAULT_QTY;
-  return String(q).toLowerCase().replace(/\s+/g,'').replace(/(grams?|gms?|g)$/,'gm').replace(/(kgs?|kilos?)$/,'kg');
+  const t = String(q).toLowerCase().replace(/\s+/g,'');
+  const m = t.match(/^([\d.]+)(kgs?|kilos?|kilograms?|grams?|gms?|g)$/);
+  if (!m) return t;
+  return m[1] + (/^k/.test(m[2]) ? 'kg' : 'gm');
 }
 function qtyOptions(sel){ const l = QTY.includes(sel)||!sel ? QTY : [...QTY, sel]; return l.map(q => `<option${q===sel?' selected':''}>${esc(q)}</option>`).join(''); }
 function setStatus(msg, cls){ const s=$("status"); s.textContent=msg||""; s.className="mb-2 "+(cls||"text-secondary"); }
