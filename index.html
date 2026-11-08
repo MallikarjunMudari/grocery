@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#198754">
+<title>Monthly Grocery</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+  :root { --brand:#198754; }
+  body { background: var(--bs-tertiary-bg); padding-bottom: 90px; -webkit-tap-highlight-color: transparent; }
+  .topbar { position: sticky; top: 0; z-index: 20; background: var(--bs-body-bg); box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+  .brand { font-weight: 700; color: var(--brand); }
+  .nav-tabs .nav-link { font-weight: 600; }
+  .nav-tabs .nav-link.active { color: var(--brand); border-bottom: 3px solid var(--brand); }
+  .badge-count { font-size:.75rem; }
+  .item { display:flex; align-items:center; gap:.75rem; padding:.7rem .85rem; background: var(--bs-body-bg);
+          border-radius:.75rem; margin-bottom:.5rem; box-shadow:0 1px 2px rgba(0,0,0,.06); border:2px solid transparent; }
+  .item.sel { border-color: var(--brand); background: rgba(25,135,84,.08); }
+  .item .form-check-input { width:1.6rem; height:1.6rem; margin:0; flex:none; cursor:pointer; }
+  .item .form-check-input:checked { background-color: var(--brand); border-color: var(--brand); }
+  .item .name { flex:1; font-size:1.05rem; font-weight:500; cursor:pointer; user-select:none; word-break:break-word; }
+  .item.sel .name { font-weight:600; }
+  .item select { width:auto; min-width:92px; }
+  .item .name { line-height:1.2; }
+  .cat { font-size:.72rem; letter-spacing:.05em; text-transform:uppercase; color:var(--bs-secondary-color); margin:1rem .25rem .35rem; font-weight:700; }
+  .empty { text-align:center; color:var(--bs-secondary-color); padding:3rem 1rem; }
+  .bottombar { position:fixed; left:0; right:0; bottom:0; z-index:20; background:var(--bs-body-bg);
+               box-shadow:0 -2px 6px rgba(0,0,0,.1); padding:.6rem 0; }
+  .btn-brand { background:var(--brand); color:#fff; border-color:var(--brand); }
+  .btn-brand:hover { background:#157347; color:#fff; }
+  .del-mode .item { border-color: var(--bs-danger-border-subtle); }
+  #status { font-size:.8rem; }
+  .search-wrap { position:relative; }
+  .search-wrap .clear { position:absolute; right:.5rem; top:50%; transform:translateY(-50%); border:0; background:none; font-size:1.4rem; line-height:1; color:var(--bs-secondary-color); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="container" style="max-width:720px">
+    <nav class="navbar px-0 pb-1">
+      <span class="navbar-brand brand mb-0">🛒 Monthly Grocery</span>
+      <div class="d-flex gap-3 small align-items-center">
+        <a href="#" id="lnkAdd" class="link-success fw-semibold text-decoration-none">+ Add grocery</a>
+        <a href="#" id="lnkDel" class="link-danger fw-semibold text-decoration-none">Delete grocery</a>
+        <div class="dropdown">
+          <a href="#" class="link-secondary text-decoration-none fs-5" data-bs-toggle="dropdown" aria-label="Menu">⋮</a>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="#" id="mnuRefresh">↻ Refresh from Google Sheet</a></li>
+            <li><a class="dropdown-item" href="#" id="mnuReset">New month (clear selections)</a></li>
+            <li><a class="dropdown-item" href="#" id="mnuSettings">⚙ Settings (Sheet link)</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+    <div class="search-wrap mb-2">
+      <input id="q" type="search" class="form-control form-control-lg" placeholder="Search grocery…" autocomplete="off">
+      <button class="clear d-none" id="qClear" aria-label="Clear">×</button>
+    </div>
+    <ul class="nav nav-tabs nav-fill border-0" id="tabs">
+      <li class="nav-item"><a class="nav-link active" href="#" data-tab="selected">Selected <span class="badge text-bg-success badge-count" id="cSel">0</span></a></li>
+      <li class="nav-item"><a class="nav-link" href="#" data-tab="unselected">Unselected <span class="badge text-bg-secondary badge-count" id="cUns">0</span></a></li>
+      <li class="nav-item"><a class="nav-link" href="#" data-tab="all">All Details <span class="badge text-bg-secondary badge-count" id="cAll">0</span></a></li>
+    </ul>
+  </div>
+</div>
+
+<main class="container pt-3" style="max-width:720px">
+  <div id="status" class="text-secondary mb-2"></div>
+  <div id="delBanner" class="alert alert-danger py-2 d-none">Delete mode: tap 🗑 on an item to remove it. <a href="#" id="delDone" class="alert-link">Done</a></div>
+  <div id="list"></div>
+</main>
+
+<div class="bottombar">
+  <div class="container d-flex gap-2" style="max-width:720px">
+    <button class="btn btn-outline-secondary flex-fill" id="btnCopy">📋 Copy list</button>
+    <button class="btn btn-outline-secondary flex-fill" id="btnShare">📤 Share</button>
+    <button class="btn btn-brand flex-fill" id="btnClearSel">Unselect all</button>
+  </div>
+</div>
+
+<!-- Add modal -->
+<div class="modal fade" id="addModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><form class="modal-content" id="addForm">
+  <div class="modal-header"><h5 class="modal-title">Add grocery</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <label class="form-label">Grocery name</label>
+    <input id="addName" class="form-control mb-3" required maxlength="60">
+    <label class="form-label">Default quantity</label>
+    <select id="addQty" class="form-select"></select>
+  </div>
+  <div class="modal-footer"><button class="btn btn-brand" type="submit">Add</button></div>
+</form></div></div>
+
+<!-- Settings modal -->
+<div class="modal fade" id="setModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><form class="modal-content" id="setForm">
+  <div class="modal-header"><h5 class="modal-title">Settings</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <label class="form-label fw-semibold">Google Sheet link</label>
+    <input id="setSheet" class="form-control mb-1" placeholder="https://docs.google.com/spreadsheets/d/e/…/pub?output=csv">
+    <div class="form-text mb-3">Use <em>File → Share → Publish to web → CSV</em> link (see README).</div>
+    <label class="form-label fw-semibold">Apps Script URL <span class="text-secondary fw-normal">(optional)</span></label>
+    <input id="setSync" class="form-control mb-1" placeholder="https://script.google.com/macros/s/…/exec">
+    <div class="form-text">If set, Add / Delete are also written back to your Google Sheet.</div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-brand" type="submit">Save & reload</button></div>
+</form></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+/* ============ CONFIG ============ */
+// Paste your published Google Sheet CSV link here once, commit to GitHub, and every device will use it.
+// (You can also set it from the ⋮ → Settings menu on a single device.)
+const DEFAULT_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTl1Q2qpg7hzcoycLpueD2iurcTDUOihp9vqPoqbkyLl1AP-siLt9JjEPwsGFF-_sfNFiS0IxKdagfW/pub?output=csv";
+const DEFAULT_SYNC_URL  = "";          // optional Google Apps Script web-app URL (see README)
+const QTY = ["100gm","250gm","500gm","1kg","2kg","3kg","4kg","5kg"];
+const DEFAULT_QTY = "500gm";
+const DEMO = "Rice,Wheat flour (Atta),Toor dal,Moong dal,Sugar,Salt,Tea powder,Coffee,Cooking oil,Milk powder,Onion,Potato,Tomato,Turmeric powder,Red chilli powder,Jeera,Mustard seeds,Poha,Rava (Sooji),Besan".split(",");
+
+/* ============ STATE ============ */
+const LS = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+};
+let sheetUrl = LS.get("g_sheet", DEFAULT_SHEET_URL) || DEFAULT_SHEET_URL;
+let syncUrl  = LS.get("g_sync", DEFAULT_SYNC_URL) || DEFAULT_SYNC_URL;
+let base   = LS.get("g_base", []);        // items from sheet (cached for offline)  [{name,qty,cat,sel}]
+let state  = LS.get("g_state", {});       // key -> {qty, sel}
+let added  = LS.get("g_added", []);       // [{name,qty,cat}]
+let removed= LS.get("g_removed", []);     // [keys]
+let tab = "selected", query = "", delMode = false;
+const key = n => n.trim().toLowerCase();
+
+/* ============ HELPERS ============ */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function normQty(q){
+  if (q===undefined || q===null || String(q).trim()==="") return DEFAULT_QTY;
+  return String(q).toLowerCase().replace(/\s+/g,'').replace(/(grams?|gms?|g)$/,'gm').replace(/(kgs?|kilos?)$/,'kg');
+}
+function qtyOptions(sel){ const l = QTY.includes(sel)||!sel ? QTY : [...QTY, sel]; return l.map(q => `<option${q===sel?' selected':''}>${esc(q)}</option>`).join(''); }
+function setStatus(msg, cls){ const s=$("status"); s.textContent=msg||""; s.className="mb-2 "+(cls||"text-secondary"); }
+
+/* CSV parser (handles quotes) */
+function parseCSV(t){
+  const rows=[]; let r=[], c="", q=false;
+  for (let i=0;i<t.length;i++){
+    const ch=t[i];
+    if (q){ if (ch=='"'){ if (t[i+1]=='"'){c+='"';i++;} else q=false; } else c+=ch; }
+    else if (ch=='"') q=true;
+    else if (ch==','){ r.push(c); c=""; }
+    else if (ch=='\n'||ch=='\r'){ if (ch=='\r'&&t[i+1]=='\n') i++; r.push(c); c=""; rows.push(r); r=[]; }
+    else c+=ch;
+  }
+  if (c!==""||r.length){ r.push(c); rows.push(r); }
+  return rows.filter(x => x.some(v => v.trim()!==""));
+}
+
+/* Turn any Google Sheet link into a fetchable CSV URL */
+function toCsvUrl(u){
+  u = u.trim();
+  if (/output=csv|tqx=out:csv/.test(u)) return u;
+  const m = u.match(/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (m && !/\/d\/e\//.test(u)){
+    const gid = (u.match(/[#&?]gid=(\d+)/)||[])[1];
+    return `https://docs.google.com/spreadsheets/d/${m[1]}/gviz/tq?tqx=out:csv${gid?'&gid='+gid:''}`;
+  }
+  return u;
+}
+
+/* Detect columns by header name; falls back to first column = name */
+function sheetToItems(rows){
+  if (!rows.length) return [];
+  const h = rows[0].map(x => x.trim().toLowerCase());
+  const find = re => h.findIndex(x => re.test(x));
+  let iName=find(/name|grocery|item|product|particular/), iQty=h.findIndex(x=>/qty|quantity|weight/.test(x)&&!/count|no\.?$|nos/.test(x)), iCnt=find(/count|nos|pieces|pcs/), iCom=find(/comment|note|remark/),
+      iSel=find(/select|check|buy|pick/), iCat=find(/categor|type|group|section/);
+  const hasHeader = iName>=0 || iQty>=0 || iSel>=0 || iCat>=0;
+  if (iName<0) iName = (hasHeader && [iQty,iSel,iCat,iCnt,iCom].includes(0)) ? [0,1,2,3,4,5].find(i=>![iQty,iSel,iCat,iCnt,iCom].includes(i)) : 0;
+  const data = hasHeader ? rows.slice(1) : rows;
+  const seen = new Set(), out=[];
+  for (const r of data){
+    const name=(r[iName]||"").trim(); if(!name||seen.has(key(name))) continue; seen.add(key(name));
+    out.push({
+      name, qty: normQty(iQty>=0?r[iQty]:""), cnt: Math.max(1, parseInt(iCnt>=0?r[iCnt]:1)||1), note: iCom>=0 ? (r[iCom]||"").trim() : "",
+      cat: iCat>=0 ? (r[iCat]||"").trim() : "",
+      sel: iSel>=0 ? /^(y|yes|true|1|x|✓|selected)$/i.test((r[iSel]||"").trim()) : false
+    });
+  }
+  return out;
+}
+
+/* ============ DATA ============ */
+function items(){
+  const gone = new Set(removed);
+  const list = [];
+  const push = (it, local) => {
+    const k = key(it.name); if (gone.has(k) && !local) return;
+    const st = state[k] || {};
+    list.push({ k, name: it.name, cat: it.cat||"", note: it.note||"", cnt: st.cnt || it.cnt || 1, qty: st.qty || it.qty || DEFAULT_QTY,
+                sel: st.sel !== undefined ? st.sel : !!it.sel, local });
+  };
+  base.forEach(i => push(i,false));
+  added.forEach(i => { if (!list.some(x => x.k===key(i.name))) push(i,true); });
+  return list.sort((a,b)=> (a.cat||"~").localeCompare(b.cat||"~") || a.name.localeCompare(b.name));
+}
+const saveState = () => LS.set("g_state", state);
+
+async function loadSheet(force){
+  if (!sheetUrl){
+    if (!base.length){ base = DEMO.map(n=>({name:n,qty:DEFAULT_QTY,cat:"",sel:false})); }
+    setStatus("Demo data shown. Open ⋮ → Settings and paste your Google Sheet link.", "text-warning");
+    render(); return;
+  }
+  setStatus("Loading from Google Sheet…");
+  try {
+    const res = await fetch(toCsvUrl(sheetUrl) + (force?`&_=${Date.now()}`:""), {cache:"no-store"});
+    if (!res.ok) throw new Error("HTTP "+res.status);
+    const txt = await res.text();
+    if (/^\s*<(!doctype|html)/i.test(txt)) throw new Error("Sheet is not public");
+    base = sheetToItems(parseCSV(txt));
+    LS.set("g_base", base);
+    setStatus(`Loaded ${base.length} items from Google Sheet · ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`, "text-success");
+  } catch(e){
+    setStatus(base.length ? "Offline / sheet unreachable — showing saved list." : "Could not load sheet ("+e.message+"). Check the link in Settings.", base.length?"text-warning":"text-danger");
+  }
+  render();
+}
+
+function syncRemote(payload){
+  if (!syncUrl) return;
+  fetch(syncUrl, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain"}, body: JSON.stringify(payload)}).catch(()=>{});
+}
+
+/* ============ RENDER ============ */
+function render(){
+  const all = items();
+  const sel = all.filter(i=>i.sel), uns = all.filter(i=>!i.sel);
+  $("cSel").textContent = sel.length; $("cUns").textContent = uns.length; $("cAll").textContent = all.length;
+  let rows = tab==="selected" ? sel : tab==="unselected" ? uns : all;
+  const q = query.trim().toLowerCase();
+  if (q) rows = rows.filter(i => i.name.toLowerCase().includes(q) || i.cat.toLowerCase().includes(q));
+  $("qClear").classList.toggle("d-none", !q);
+  $("list").classList.toggle("del-mode", delMode);
+  $("delBanner").classList.toggle("d-none", !delMode);
+
+  if (!rows.length){
+    $("list").innerHTML = `<div class="empty">${q ? `No grocery matches “${esc(query)}”.` :
+      tab==="selected" ? "Nothing selected yet.<br>Search an item and tick it — it will appear here." :
+      tab==="unselected" ? "Everything is selected 🎉" : "No groceries yet. Tap “+ Add grocery”."}</div>`;
+    return;
+  }
+  let html="", lastCat=null;
+  for (const i of rows){
+    if (i.cat !== lastCat && (i.cat || lastCat!==null)){ html += `<div class="cat">${esc(i.cat||"Other")}</div>`; }
+    lastCat = i.cat;
+    html += `<div class="item${i.sel?' sel':''}" data-k="${esc(i.k)}">
+      <input type="checkbox" class="form-check-input chk" ${i.sel?'checked':''} aria-label="Select ${esc(i.name)}">
+      <div class="name">${esc(i.name)}${i.note?`<div class="small text-secondary fw-normal">${esc(i.note)}</div>`:''}</div>
+      <select class="form-select form-select-sm qty">${qtyOptions(i.qty)}</select>
+      <input type="number" min="1" max="99" value="${i.cnt}" class="form-control form-control-sm cnt" style="width:58px" aria-label="Count">
+      ${delMode?`<button class="btn btn-sm btn-outline-danger del" aria-label="Delete">🗑</button>`:''}
+    </div>`;
+  }
+  $("list").innerHTML = html;
+}
+
+/* ============ EVENTS ============ */
+$("list").addEventListener("click", e=>{
+  const row = e.target.closest(".item"); if(!row) return;
+  const k = row.dataset.k, it = items().find(x=>x.k===k); if(!it) return;
+  if (e.target.closest(".del")){
+    if (!confirm(`Delete “${it.name}”?`)) return;
+    if (it.local){ added = added.filter(a=>key(a.name)!==k); LS.set("g_added", added); }
+    if (base.some(b=>key(b.name)===k)){ removed.push(k); LS.set("g_removed", [...new Set(removed)]); }
+    delete state[k]; saveState(); syncRemote({action:"delete", name:it.name});
+    render(); return;
+  }
+  if (e.target.closest(".qty")||e.target.closest(".cnt")) return;
+  if (e.target.classList.contains("chk") || e.target.closest(".name")){
+    const v = e.target.classList.contains("chk") ? e.target.checked : !it.sel;
+    state[k] = {...(state[k]||{qty:it.qty}), sel:v}; saveState();
+    // keep the item visible briefly in the tab you're searching in; then re-render
+    render();
+  }
+});
+$("list").addEventListener("change", e=>{
+  const isQ=e.target.classList.contains("qty"), isC=e.target.classList.contains("cnt");
+  if (!isQ && !isC) return;
+  const k = e.target.closest(".item").dataset.k;
+  const it = items().find(x=>x.k===k);
+  state[k] = {qty:it.qty, cnt:it.cnt, sel:it.sel, ...(state[k]||{}), ...(isQ?{qty:e.target.value}:{cnt:Math.max(1,parseInt(e.target.value)||1)})}; saveState();
+});
+
+$("tabs").addEventListener("click", e=>{
+  const a = e.target.closest("[data-tab]"); if(!a) return; e.preventDefault();
+  tab = a.dataset.tab;
+  document.querySelectorAll("#tabs .nav-link").forEach(x=>x.classList.toggle("active", x===a));
+  render();
+});
+$("q").addEventListener("input", e=>{ query=e.target.value; render(); });
+$("qClear").addEventListener("click", ()=>{ query=""; $("q").value=""; render(); $("q").focus(); });
+
+const addModal = new bootstrap.Modal($("addModal")), setModal = new bootstrap.Modal($("setModal"));
+$("addQty").innerHTML = qtyOptions(DEFAULT_QTY);
+$("lnkAdd").addEventListener("click", e=>{ e.preventDefault(); $("addName").value=query; addModal.show(); setTimeout(()=>$("addName").focus(),300); });
+$("addForm").addEventListener("submit", e=>{
+  e.preventDefault();
+  const name=$("addName").value.trim(), qty=$("addQty").value; if(!name) return;
+  const k=key(name);
+  if (items().some(i=>i.k===k)){ alert("Already in the list."); return; }
+  removed = removed.filter(x=>x!==k); LS.set("g_removed", removed);
+  added.push({name, qty, cat:""}); LS.set("g_added", added);
+  state[k] = {qty, sel:true}; saveState();           // newly added = needed this month
+  syncRemote({action:"add", name, qty});
+  addModal.hide(); query=""; $("q").value=""; render();
+});
+$("lnkDel").addEventListener("click", e=>{ e.preventDefault(); delMode=!delMode; if(delMode){ tab="all"; document.querySelectorAll("#tabs .nav-link").forEach(x=>x.classList.toggle("active", x.dataset.tab==="all")); } render(); });
+$("delDone").addEventListener("click", e=>{ e.preventDefault(); delMode=false; render(); });
+
+$("mnuRefresh").addEventListener("click", e=>{ e.preventDefault(); removed=[]; LS.set("g_removed",[]); loadSheet(true); });
+$("mnuReset").addEventListener("click", e=>{ e.preventDefault(); if(confirm("Clear all selections for a new month?")){ Object.keys(state).forEach(k=>state[k].sel=false); base.forEach(b=>b.sel=false); LS.set("g_base",base); saveState(); render(); }});
+$("btnClearSel").addEventListener("click", ()=>{ if(confirm("Unselect everything?")){ items().forEach(i=>{ state[i.k]={...(state[i.k]||{qty:i.qty}), sel:false}; }); saveState(); render(); }});
+$("mnuSettings").addEventListener("click", e=>{ e.preventDefault(); $("setSheet").value=sheetUrl; $("setSync").value=syncUrl; setModal.show(); });
+$("setForm").addEventListener("submit", e=>{
+  e.preventDefault();
+  sheetUrl=$("setSheet").value.trim(); syncUrl=$("setSync").value.trim();
+  LS.set("g_sheet", sheetUrl); LS.set("g_sync", syncUrl);
+  base=[]; setModal.hide(); loadSheet(true);
+});
+
+function listText(){
+  const sel = items().filter(i=>i.sel);
+  return sel.length ? "🛒 Grocery list\n" + sel.map(i=>`• ${i.name} — ${i.qty}${i.cnt>1?' × '+i.cnt:''}`).join("\n") : "";
+}
+$("btnCopy").addEventListener("click", async ()=>{
+  const t=listText(); if(!t) return alert("Nothing selected.");
+  try { await navigator.clipboard.writeText(t); setStatus("List copied ✔","text-success"); } catch(e){ prompt("Copy list:", t); }
+});
+$("btnShare").addEventListener("click", async ()=>{
+  const t=listText(); if(!t) return alert("Nothing selected.");
+  if (navigator.share) { try { await navigator.share({text:t}); } catch(e){} } else { try{ await navigator.clipboard.writeText(t); setStatus("List copied ✔","text-success"); }catch(e){ prompt("Copy list:", t);} }
+});
+
+loadSheet(false);
+</script>
+</body>
+</html>
