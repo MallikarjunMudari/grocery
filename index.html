@@ -14,7 +14,7 @@
   .nav-tabs .nav-link { font-weight: 600; }
   .nav-tabs .nav-link.active { color: var(--brand); border-bottom: 3px solid var(--brand); }
   .badge-count { font-size:.75rem; }
-  .item { display:flex; align-items:center; gap:.75rem; padding:.7rem .85rem; background: var(--bs-body-bg);
+  .item { flex-wrap:wrap; display:flex; align-items:center; gap:.75rem; padding:.7rem .85rem; background: var(--bs-body-bg);
           border-radius:.75rem; margin-bottom:.5rem; box-shadow:0 1px 2px rgba(0,0,0,.06); border:2px solid transparent; }
   .item.sel { border-color: var(--brand); background: rgba(25,135,84,.08); }
   .item .form-check-input { width:1.6rem; height:1.6rem; margin:0; flex:none; cursor:pointer; }
@@ -23,6 +23,7 @@
   .item.sel .name { font-weight:600; }
   .item select { width:auto; min-width:92px; }
   .item .name { line-height:1.2; }
+  .item .note { flex:1 0 100%; margin-left:2.35rem; max-width:calc(100% - 2.35rem); background:transparent; border-style:dashed; }
   .cat { font-size:.72rem; letter-spacing:.05em; text-transform:uppercase; color:var(--bs-secondary-color); margin:1rem .25rem .35rem; font-weight:700; }
   .empty { text-align:center; color:var(--bs-secondary-color); padding:3rem 1rem; }
   .bottombar { position:fixed; left:0; right:0; bottom:0; z-index:20; background:var(--bs-body-bg);
@@ -87,7 +88,9 @@
     <label class="form-label">Grocery name</label>
     <input id="addName" class="form-control mb-3" required maxlength="60">
     <label class="form-label">Default quantity</label>
-    <select id="addQty" class="form-select"></select>
+    <select id="addQty" class="form-select mb-3"></select>
+    <label class="form-label">Comments <span class="text-secondary">(optional, e.g. 750gm)</span></label>
+    <input id="addNote" class="form-control" maxlength="120">
   </div>
   <div class="modal-footer"><button class="btn btn-brand" type="submit">Add</button></div>
 </form></div></div>
@@ -113,8 +116,9 @@
 // (You can also set it from the ⋮ → Settings menu on a single device.)
 const DEFAULT_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTl1Q2qpg7hzcoycLpueD2iurcTDUOihp9vqPoqbkyLl1AP-siLt9JjEPwsGFF-_sfNFiS0IxKdagfW/pub?output=csv";
 const DEFAULT_SYNC_URL  = "";          // optional Google Apps Script web-app URL (see README)
-const QTY = ["100gm","250gm","500gm","1kg","2kg","3kg","4kg","5kg"];
-const DEFAULT_QTY = "500gm";
+const QTY = ["None","100gm","250gm","500gm","1kg","2kg","3kg","4kg","5kg"];
+const DEFAULT_QTY = "500gm";   // default pre-selected in the Add dialog
+const NO_QTY = "None";
 const DEMO = "Rice,Wheat flour (Atta),Toor dal,Moong dal,Sugar,Salt,Tea powder,Coffee,Cooking oil,Milk powder,Onion,Potato,Tomato,Turmeric powder,Red chilli powder,Jeera,Mustard seeds,Poha,Rava (Sooji),Besan".split(",");
 
 /* ============ STATE ============ */
@@ -135,7 +139,8 @@ const key = n => n.trim().toLowerCase();
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function normQty(q){
-  if (q===undefined || q===null || String(q).trim()==="") return DEFAULT_QTY;
+  if (q===undefined || q===null || String(q).trim()==="") return NO_QTY;
+  if (/^none$/i.test(String(q).trim())) return NO_QTY;
   const t = String(q).toLowerCase().replace(/\s+/g,'');
   const m = t.match(/^([\d.]+)(kgs?|kilos?|kilograms?|grams?|gms?|g)$/);
   if (!m) return t;
@@ -200,7 +205,7 @@ function items(){
   const push = (it, local) => {
     const k = key(it.name); if (gone.has(k) && !local) return;
     const st = state[k] || {};
-    list.push({ k, name: it.name, cat: it.cat||"", note: it.note||"", cnt: st.cnt || it.cnt || 1, qty: st.qty || it.qty || DEFAULT_QTY,
+    list.push({ k, name: it.name, cat: it.cat||"", note: st.note!==undefined ? st.note : (it.note||""), cnt: st.cnt || it.cnt || 1, qty: st.qty || it.qty || NO_QTY,
                 sel: st.sel !== undefined ? st.sel : !!it.sel, local });
   };
   base.forEach(i => push(i,false));
@@ -259,10 +264,11 @@ function render(){
     lastCat = i.cat;
     html += `<div class="item${i.sel?' sel':''}" data-k="${esc(i.k)}">
       <input type="checkbox" class="form-check-input chk" ${i.sel?'checked':''} aria-label="Select ${esc(i.name)}">
-      <div class="name">${esc(i.name)}${i.note?`<div class="small text-secondary fw-normal">${esc(i.note)}</div>`:''}</div>
+      <div class="name">${esc(i.name)}</div>
       <select class="form-select form-select-sm qty">${qtyOptions(i.qty)}</select>
       <input type="number" min="1" max="99" value="${i.cnt}" class="form-control form-control-sm cnt" style="width:58px" aria-label="Count">
       ${delMode?`<button class="btn btn-sm btn-outline-danger del" aria-label="Delete">🗑</button>`:''}
+      <input type="text" class="form-control form-control-sm note" maxlength="120" placeholder="Comments / extra specifications…" value="${esc(i.note)}" aria-label="Comments">
     </div>`;
   }
   $("list").innerHTML = html;
@@ -279,13 +285,18 @@ $("list").addEventListener("click", e=>{
     delete state[k]; saveState(); syncRemote({action:"delete", name:it.name});
     render(); return;
   }
-  if (e.target.closest(".qty")||e.target.closest(".cnt")) return;
+  if (e.target.closest(".qty")||e.target.closest(".cnt")||e.target.closest(".note")) return;
   if (e.target.classList.contains("chk") || e.target.closest(".name")){
     const v = e.target.classList.contains("chk") ? e.target.checked : !it.sel;
     state[k] = {...(state[k]||{qty:it.qty}), sel:v}; saveState();
     // keep the item visible briefly in the tab you're searching in; then re-render
     render();
   }
+});
+$("list").addEventListener("input", e=>{
+  if (!e.target.classList.contains("note")) return;
+  const k = e.target.closest(".item").dataset.k, it = items().find(x=>x.k===k); if(!it) return;
+  state[k] = {qty:it.qty, cnt:it.cnt, sel:it.sel, ...(state[k]||{}), note:e.target.value}; saveState();
 });
 $("list").addEventListener("change", e=>{
   const isQ=e.target.classList.contains("qty"), isC=e.target.classList.contains("cnt");
@@ -306,16 +317,16 @@ $("qClear").addEventListener("click", ()=>{ query=""; $("q").value=""; render();
 
 const addModal = new bootstrap.Modal($("addModal")), setModal = new bootstrap.Modal($("setModal"));
 $("addQty").innerHTML = qtyOptions(DEFAULT_QTY);
-$("lnkAdd").addEventListener("click", e=>{ e.preventDefault(); $("addName").value=query; addModal.show(); setTimeout(()=>$("addName").focus(),300); });
+$("lnkAdd").addEventListener("click", e=>{ e.preventDefault(); $("addName").value=query; $("addNote").value=""; addModal.show(); setTimeout(()=>$("addName").focus(),300); });
 $("addForm").addEventListener("submit", e=>{
   e.preventDefault();
-  const name=$("addName").value.trim(), qty=$("addQty").value; if(!name) return;
+  const name=$("addName").value.trim(), qty=$("addQty").value, note=$("addNote").value.trim(); if(!name) return;
   const k=key(name);
   if (items().some(i=>i.k===k)){ alert("Already in the list."); return; }
   removed = removed.filter(x=>x!==k); LS.set("g_removed", removed);
-  added.push({name, qty, cat:""}); LS.set("g_added", added);
-  state[k] = {qty, sel:true}; saveState();           // newly added = needed this month
-  syncRemote({action:"add", name, qty});
+  added.push({name, qty, cat:"", note}); LS.set("g_added", added);
+  state[k] = {qty, note, sel:true}; saveState();           // newly added = needed this month
+  syncRemote({action:"add", name, qty: qty===NO_QTY?"":qty, note});
   addModal.hide(); query=""; $("q").value=""; render();
 });
 $("lnkDel").addEventListener("click", e=>{ e.preventDefault(); delMode=!delMode; if(delMode){ tab="all"; document.querySelectorAll("#tabs .nav-link").forEach(x=>x.classList.toggle("active", x.dataset.tab==="all")); } render(); });
@@ -334,7 +345,7 @@ $("setForm").addEventListener("submit", e=>{
 
 function listText(){
   const sel = items().filter(i=>i.sel);
-  return sel.length ? "🛒 Grocery list\n" + sel.map(i=>`• ${i.name} — ${i.qty}${i.cnt>1?' × '+i.cnt:''}`).join("\n") : "";
+  return sel.length ? "🛒 Grocery list\n" + sel.map(i=>`• ${i.name}${i.qty!==NO_QTY?' — '+i.qty:''}${i.cnt>1?' × '+i.cnt:''}${i.note?' ('+i.note+')':''}`).join("\n") : "";
 }
 $("btnCopy").addEventListener("click", async ()=>{
   const t=listText(); if(!t) return alert("Nothing selected.");
